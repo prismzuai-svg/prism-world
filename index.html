@@ -5,10 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prism Stone Magic - 美妙旋律手势交互</title>
     
-    <!-- ==================== 跨域隔离头部（支持 SharedArrayBuffer/多线程） ==================== -->
-    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
-    <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
-    
     <!-- ==================== CDN 引入 ==================== -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -1597,8 +1593,7 @@
        ==================== Web Worker 1: 手势识别 ====================
        ======================================================================== */
     const GESTURE_WORKER_CODE = `
-    // 手势识别 Worker
-    let hands = null;
+    // 手势识别 Worker（主线程处理 Hands，本 Worker 只处理手势逻辑）
     let isInitialized = false;
     let lastGestureTime = 0;
     let gestureHistory = [];
@@ -1709,52 +1704,18 @@
     let isInitializing = false;
     let modelLoadProgress = 0;
     
-    // 初始化 MediaPipe Hands
-    async function initHands() {
-        if (isInitialized || isInitializing) {
-            return;
-        }
-        
-        isInitializing = true;
+    // Worker 就绪（不再需要初始化 Hands）
+    function initWorker() {
+        if (isInitialized) return;
+        isInitialized = true;
         self.postMessage({ type: 'INIT_START', worker: 'gesture' });
-        
-        try {
-            // 等待 Hands 库加载
-            self.postMessage({ type: 'LOADING_PROGRESS', progress: 10, status: '检查MediaPipe Hands库...' });
-            
-            if (typeof Hands === 'undefined') {
-                throw new Error('MediaPipe Hands 库未加载');
-            }
-            
-            self.postMessage({ type: 'LOADING_PROGRESS', progress: 30, status: '初始化Hands模型...' });
-            
-            hands = new Hands({
-                locateFile: (file) => 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/' + file
-            });
-            
-            self.postMessage({ type: 'LOADING_PROGRESS', progress: 50, status: '配置模型参数...' });
-            
-            hands.setOptions(modelConfig);
-            
-            hands.onResults(onHandResults);
-            
-            self.postMessage({ type: 'LOADING_PROGRESS', progress: 80, status: '等待首帧检测...' });
-            
-            // 等待第一帧处理完成
-            isInitialized = true;
-            isInitializing = false;
-            
-            self.postMessage({ type: 'LOADING_PROGRESS', progress: 100, status: '模型就绪！' });
-            self.postMessage({ type: 'WORKER_READY', worker: 'gesture', landmarks: LANDMARK_NAMES, connections: HAND_CONNECTIONS });
-            
-            console.log('[GestureWorker] ✅ Hands模型初始化完成，21点关键点检测已启用');
-            
-        } catch (error) {
-            isInitializing = false;
-            console.error('[GestureWorker] Hands模型初始化失败:', error);
-            self.postMessage({ type: 'INIT_ERROR', error: error.message, worker: 'gesture' });
-        }
+        self.postMessage({ type: 'LOADING_PROGRESS', progress: 100, status: 'Worker就绪！' });
+        self.postMessage({ type: 'WORKER_READY', worker: 'gesture', landmarks: LANDMARK_NAMES, connections: HAND_CONNECTIONS });
+        console.log('[GestureWorker] ✅ Worker 就绪，等待主线程 landmark 数据...');
     }
+    
+    // 初始化
+    initWorker();
     
     // 更新模型配置
     function updateModelConfig(config) {
@@ -2188,17 +2149,22 @@
         return Math.atan2(p2.y - p1.y, p2.x - p1.x);
     }
     
-    // 消息处理
+    // 消息处理（接收主线程传来的 landmark 数据进行处理）
     self.onmessage = async function(e) {
         const { type, data } = e.data;
         
         switch(type) {
             case 'INIT':
-                await initHands();
+                // Worker 已通过 initWorker() 就绪
                 break;
-            case 'PROCESS_FRAME':
-                if (hands && isInitialized) {
-                    await hands.send({ image: data.frame });
+            case 'LANDMARKS':
+                // 接收主线程 Hands 处理后的 landmark 数据，进行手势识别
+                if (data.landmarks) {
+                    onHandResults({ landmarks: data.landmarks });
+                } else {
+                    // 无手部检测
+                    updateGestureStateMachine(null);
+                    self.postMessage({ type: 'NO_HANDS' });
                 }
                 break;
             case 'UPDATE_CONFIG':
@@ -3609,7 +3575,7 @@
         /**
          * 初始化所有 Worker
          */
-        async init(videoElement) {
+        async init() {
             this.log('info', '开始初始化 Workers...');
             
             // 设置错误处理
@@ -6556,6 +6522,9 @@
             // 初始化Prism世界触发系统
             this.prismWorldTrigger = new PrismWorldTriggerSystem(this);
             
+            // 初始化主线程 Hands（处理帧并将 landmark 发送到 Worker）
+            await this.initHands();
+            
             // 连接性能监控与 Worker 管理器
             this.workerManager.setPerformanceMonitor(this.performanceMonitor);
             
@@ -6585,6 +6554,59 @@
             
             // 隐藏加载
             this.loadingOverlay.classList.add('hidden');
+        }
+        
+        /**
+         * 初始化主线程 Hands（主线程负责处理帧，Worker 负责手势逻辑）
+         */
+        async initHands() {
+            if (this.hands) return; // 避免重复初始化
+            
+            console.log('[App] 初始化主线程 Hands...');
+            
+            // 检查 Hands 库是否已加载
+            if (typeof Hands === 'undefined') {
+                throw new Error('MediaPipe Hands 库未加载，请检查 CDN');
+            }
+            
+            // 创建 Hands 实例
+            this.hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+            
+            // 配置
+            this.hands.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.5,
+                selfieMode: true
+            });
+            
+            // 设置结果回调：将 landmark 发送到 Worker
+            this.hands.onResults((results) => {
+                this.onHandsResults(results);
+            });
+            
+            console.log('[App] 主线程 Hands 初始化完成');
+        }
+        
+        /**
+         * Hands 处理结果回调
+         */
+        onHandsResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // 有手部检测，发送到 Worker 进行手势识别
+                this.workerManager.postMessage('gesture', 'LANDMARKS', {
+                    landmarks: results.multiHandLandmarks,
+                    handedness: results.multiHandedness || []
+                });
+            } else {
+                // 无手部检测
+                this.workerManager.postMessage('gesture', 'LANDMARKS', {
+                    landmarks: null
+                });
+            }
         }
         
         /**
@@ -6622,8 +6644,8 @@
                 // 启动帧捕获循环
                 await this.cameraCapture.startCapture();
                 
-                // 初始化 Workers
-                await this.workerManager.init(this.videoElement);
+                // 初始化 Workers（主线程 Hands 已初始化，手势逻辑在 Worker 内）
+                await this.workerManager.init();
                 
                 this.isRunning = true;
                 
@@ -6651,13 +6673,11 @@
          * @param {ImageBitmap} bitmap - 捕获的帧
          * @param {Object} metadata - 帧元数据
          */
-        onCameraFrame(bitmap, metadata) {
-            // 发送帧到手势识别 Worker
-            this.workerManager.postMessage('gesture', 'FRAME', {
-                bitmap: bitmap,  // ImageBitmap 可 Transfer
-                timestamp: metadata.timestamp,
-                frameNumber: metadata.frameNumber
-            });
+        async onCameraFrame(bitmap, metadata) {
+            // 使用主线程 Hands 处理帧（Worker 无法访问 Hands 库）
+            if (this.hands && bitmap) {
+                await this.hands.send({ image: bitmap });
+            }
             
             // 发送帧到渲染 Worker（用于字符画）- 只传 ImageBitmap，不传 DOM 元素
             if (bitmap) {
@@ -6697,8 +6717,8 @@
             
             // 从 CameraCapture 获取当前帧并发送到渲染 Worker
             const currentBitmap = this.cameraCapture?.getCurrentFrame();
-            if (currentBitmap && this.videoElement.readyState >= 2) {
-                this.workerManager.processFrame(this.videoElement, currentBitmap);
+            if (currentBitmap) {
+                this.workerManager.processFrame(null, currentBitmap);
             }
             
             // 更新粒子
