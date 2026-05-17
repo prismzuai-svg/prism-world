@@ -3369,10 +3369,10 @@
             
             try {
                 // 创建 ImageBitmap（零拷贝传输到 Worker）
+                // 注意：不使用 'flip'，镜像在 Canvas 渲染时处理
                 const bitmap = await createImageBitmap(this.videoElement, {
-                    imageOrientation: 'flip',
                     premultiplyAlpha: 'none',
-                    colorSpaceConversion: 'none'
+                    colorSpaceConversion: 'default'
                 });
                 
                 const captureTime = performance.now() - startTime;
@@ -6757,41 +6757,55 @@
         render(deltaTime) {
             const ctx = this.contexts;
             
-            // 清空画布
-            ctx.bg.getImageData(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+            // 清空覆盖层画布（bgCanvas 由 renderBackground 完全重绘）
             ctx.charArt.clearRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
             ctx.prismStone.clearRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
             ctx.particle.clearRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
             ctx.gestureTrail.clearRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
             ctx.ui.clearRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
             
-            // 渲染各层
-            this.renderBackground(ctx.bg);
-            this.renderCharArt(ctx.charArt);
-            this.renderPrismStones(ctx.prismStone);
-            this.renderParticles(ctx.particle);
-            this.renderGestureTrails(ctx.gestureTrail);
-            this.renderUI(ctx.ui);
+            // 渲染各层（从底到顶）
+            this.renderBackground(ctx.bg);      // 1. 摄像头底层
+            this.renderCharArt(ctx.charArt);    // 2. 字符画层
+            this.renderPrismStones(ctx.prismStone); // 3. 棱石层
+            this.renderParticles(ctx.particle); // 4. 粒子层
+            this.renderGestureTrails(ctx.gestureTrail); // 5. 骨骼层
+            this.renderUI(ctx.ui);              // 6. UI层
         }
         
         renderBackground(ctx) {
-            // 渐变背景
-            const gradient = ctx.createLinearGradient(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+            const { width, height } = CONFIG;
             
-            if (this.isPrismWorld) {
-                gradient.addColorStop(0, '#1a0a2e');
-                gradient.addColorStop(0.5, '#0a1a2e');
-                gradient.addColorStop(1, '#0a0a1a');
+            // 获取当前摄像头帧
+            const currentBitmap = this.cameraCapture?.getCurrentFrame();
+            
+            if (currentBitmap && this.isRunning) {
+                // 摄像头画面渲染到底层
+                // 注意：ImageBitmap 已包含 CSS scaleX(-1) 变换效果，无需重复镜像
+                ctx.drawImage(currentBitmap, 0, 0, width, height);
+                
+                // 半透明叠加暗色背景（增强特效可见性）
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(0, 0, width, height);
             } else {
-                gradient.addColorStop(0, '#0a0a1a');
-                gradient.addColorStop(1, '#1a0a2e');
+                // 无摄像头时显示渐变背景
+                const gradient = ctx.createLinearGradient(0, 0, width, height);
+                
+                if (this.isPrismWorld) {
+                    gradient.addColorStop(0, '#1a0a2e');
+                    gradient.addColorStop(0.5, '#0a1a2e');
+                    gradient.addColorStop(1, '#0a0a1a');
+                } else {
+                    gradient.addColorStop(0, '#0a0a1a');
+                    gradient.addColorStop(1, '#1a0a2e');
+                }
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, width, height);
+                
+                // 星空效果
+                this.renderStars(ctx);
             }
-            
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
-            
-            // 星空效果
-            this.renderStars(ctx);
         }
         
         renderStars(ctx) {
