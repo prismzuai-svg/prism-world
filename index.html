@@ -1710,7 +1710,7 @@
     let modelLoadProgress = 0;
     
     // 初始化 MediaPipe Hands
-    async function initHands(videoElement) {
+    async function initHands() {
         if (isInitialized || isInitializing) {
             return;
         }
@@ -2194,7 +2194,7 @@
         
         switch(type) {
             case 'INIT':
-                await initHands(data.videoElement);
+                await initHands();
                 break;
             case 'PROCESS_FRAME':
                 if (hands && isInitialized) {
@@ -3637,7 +3637,7 @@
             this.renderWorker.onerror = (e) => this.handleWorkerError('render', e);
             
             // 初始化手势 Worker（需要等待 MediaPipe 加载）
-            this.postMessage('gesture', 'INIT', { videoElement });
+            this.postMessage('gesture', 'INIT');
             
             // 初始化粒子 Worker
             this.postMessage('particle', 'CLEAR', {});
@@ -3739,7 +3739,7 @@
                 
                 // 重新初始化
                 if (workerName === 'gesture') {
-                    this.postMessage('gesture', 'INIT', { videoElement: this.videoElement });
+                    this.postMessage('gesture', 'INIT');
                 } else if (workerName === 'particle') {
                     this.postMessage('particle', 'CLEAR', {});
                 }
