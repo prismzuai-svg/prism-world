@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prism Stone Magic - 美妙旋律手势交互</title>
     
+    <!-- ==================== 跨域隔离头部（支持 SharedArrayBuffer/多线程） ==================== -->
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+    
     <!-- ==================== CDN 引入 ==================== -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -4015,21 +4019,13 @@
                             height: CONFIG.CANVAS_HEIGHT,
                             bitmap: bmp
                         }, [bmp]);
-                    }).catch(() => {
-                        // 回退到普通方式
-                        this.send('render', 'PROCESS', {
-                            videoElement,
-                            width: CONFIG.CANVAS_WIDTH,
-                            height: CONFIG.CANVAS_HEIGHT
-                        });
+                    }).catch(err => {
+                        // 回退：使用 OffscreenCanvas 绘制
+                        console.warn('[WorkerManager] createImageBitmap 失败:', err);
                     });
                 } else {
-                    // 回退
-                    this.send('render', 'PROCESS', {
-                        videoElement,
-                        width: CONFIG.CANVAS_WIDTH,
-                        height: CONFIG.CANVAS_HEIGHT
-                    });
+                    // 最后的回退：尝试用 OffscreenCanvas
+                    console.warn('[WorkerManager] createImageBitmap 不可用');
                 }
             } catch (error) {
                 this.log('error', '处理帧失败:', error);
@@ -6663,12 +6659,14 @@
                 frameNumber: metadata.frameNumber
             });
             
-            // 发送帧到渲染 Worker（用于字符画）
-            this.workerManager.postMessage('render', 'PROCESS', {
-                videoElement: this.videoElement,
-                width: CONFIG.CANVAS_WIDTH,
-                height: CONFIG.CANVAS_HEIGHT
-            });
+            // 发送帧到渲染 Worker（用于字符画）- 只传 ImageBitmap，不传 DOM 元素
+            if (bitmap) {
+                this.workerManager.postMessage('render', 'PROCESS', {
+                    bitmap: bitmap,
+                    width: CONFIG.CANVAS_WIDTH,
+                    height: CONFIG.CANVAS_HEIGHT
+                }, [bitmap]); // 使用 Transferable 转移所有权
+            }
         }
         
         stop() {
