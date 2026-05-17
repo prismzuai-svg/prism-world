@@ -3368,8 +3368,12 @@
             const startTime = performance.now();
             
             try {
-                // 创建 ImageBitmap（零拷贝传输到 Worker）
-                // 注意：不使用 'flip'，镜像在 Canvas 渲染时处理
+                // 检查视频是否准备好
+                if (this.videoElement.readyState < 2) {
+                    return;
+                }
+                
+                // 创建 ImageBitmap
                 const bitmap = await createImageBitmap(this.videoElement, {
                     premultiplyAlpha: 'none',
                     colorSpaceConversion: 'default'
@@ -3397,6 +3401,11 @@
                 };
                 
                 this.callbacks.onFrame?.(bitmap, metadata);
+                
+                // 每60帧输出一次调试信息
+                if (this.frameCount % 60 === 0) {
+                    console.log(`[CameraCapture] 帧#${this.frameCount}, FPS: ${this.stats.actualFPS.toFixed(1)}, 捕获耗时: ${captureTime.toFixed(1)}ms`);
+                }
                 
                 this.frameCount++;
                 
@@ -3771,12 +3780,13 @@
                     break;
                     
                 case 'GESTURE_DETECTED':
-                    this.throttleEmit('gesture', data);
+                    // 手势检测不节流，确保实时响应
+                    this.emit('gesture', data);
                     break;
                     
                 case 'HANDS_DATA':
-                    // 发送手势数据
-                    this.throttleEmit('hands', data);
+                    // 手势数据不节流，确保实时响应
+                    this.emit('hands', data);
                     // 发送手势状态机数据（更高频率）
                     if (data.gestureState) {
                         this.emit('gestureState', {
@@ -6585,14 +6595,16 @@
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
             });
             
-            // 配置
+            // 配置（降低复杂度以提高性能）
             this.hands.setOptions({
                 maxNumHands: 2,
-                modelComplexity: 1,
-                minDetectionConfidence: 0.7,
-                minTrackingConfidence: 0.5,
+                modelComplexity: 0, // 0=轻量级，1=完整，网页端用0
+                minDetectionConfidence: 0.5, // 降低检测阈值提高识别率
+                minTrackingConfidence: 0.5,  // 降低追踪阈值
                 selfieMode: true
             });
+            
+            console.log('[App] Hands配置完成: modelComplexity=0');
             
             // 设置结果回调：将 landmark 发送到 Worker
             this.hands.onResults((results) => {
@@ -6680,23 +6692,34 @@
         }
         
         /**
-         * 摄像头帧回调 - 处理每一帧
+         * 摄像头帧回调 - 处理每一帧（Hands + 字符画）
          * @param {ImageBitmap} bitmap - 捕获的帧
          * @param {Object} metadata - 帧元数据
          */
         async onCameraFrame(bitmap, metadata) {
-            // 使用主线程 Hands 处理帧（Worker 无法访问 Hands 库）
+            // 使用主线程 Hands 处理帧（非阻塞）
             if (this.hands && bitmap) {
-                await this.hands.send({ image: bitmap });
+                try {
+                    // 不等待，直接发送
+                    this.hands.send({ image: bitmap }).catch(e => {
+                        console.warn('[App] Hands处理失败:', e.message);
+                    });
+                } catch (e) {
+                    console.warn('[App] Hands.send失败:', e.message);
+                }
             }
             
-            // 发送帧到渲染 Worker（用于字符画）- 只传 ImageBitmap，不传 DOM 元素
+            // 发送帧到渲染 Worker（用于字符画）- 非阻塞
             if (bitmap) {
-                this.workerManager.postMessage('render', 'PROCESS', {
-                    bitmap: bitmap,
-                    width: CONFIG.CANVAS_WIDTH,
-                    height: CONFIG.CANVAS_HEIGHT
-                }, [bitmap]); // 使用 Transferable 转移所有权
+                try {
+                    this.workerManager.postMessage('render', 'PROCESS', {
+                        bitmap: bitmap,
+                        width: CONFIG.CANVAS_WIDTH,
+                        height: CONFIG.CANVAS_HEIGHT
+                    }, [bitmap]);
+                } catch (e) {
+                    console.warn('[App] Worker消息发送失败:', e.message);
+                }
             }
         }
         
@@ -6719,20 +6742,23 @@
             if (!this.isRunning) return;
             
             const now = performance.now();
-            const deltaTime = now - this.lastTime;
+            const deltaTime = Math.min(now - this.lastTime, 50); // 限制最大 deltaTime
             this.lastTime = now;
             
-            // 性能监控
-            this.performanceMonitor.tick();
-            this.updatePerformanceUI();
+            // 性能监控（降低频率，每10帧更新一次）
+            if (this._frameCount % 10 === 0) {
+                this.performanceMonitor.tick();
+                this.updatePerformanceUI();
+            }
+            this._frameCount = (this._frameCount || 0) + 1;
             
-            // 从 CameraCapture 获取当前帧并发送到渲染 Worker
-            const currentBitmap = this.cameraCapture?.getCurrentFrame();
-            if (currentBitmap) {
-                this.workerManager.processFrame(null, currentBitmap);
+            // 帧率控制：锁定 30fps，丢弃多余帧
+            if (deltaTime < 33) { // 33ms = 30fps
+                requestAnimationFrame(() => this.mainLoop());
+                return;
             }
             
-            // 更新粒子
+            // 注意：摄像头帧处理在 onCameraFrame 回调中完成，不要在这里重复发送
             this.workerManager.updateParticles(deltaTime);
             
             // 更新Prism世界触发系统（节拍同步）
@@ -6743,12 +6769,12 @@
             // 更新棱石
             this.stoneManager.update(deltaTime);
             
-            // 渲染字符画
-            if (this.charArtRenderer) {
+            // 渲染字符画（降低频率）
+            if (this.charArtRenderer && this._frameCount % 2 === 0) {
                 this.charArtRenderer.render(now);
             }
             
-            // 渲染
+            // 渲染所有图层
             this.render(deltaTime);
             
             requestAnimationFrame(() => this.mainLoop());
@@ -6776,18 +6802,39 @@
         renderBackground(ctx) {
             const { width, height } = CONFIG;
             
-            // 获取当前摄像头帧
-            const currentBitmap = this.cameraCapture?.getCurrentFrame();
+            // 先清空画布
+            ctx.clearRect(0, 0, width, height);
             
-            if (currentBitmap && this.isRunning) {
+            // 直接绘制 video 元素（最简单可靠）
+            const video = this.videoElement;
+            
+            // 调试信息（每60帧输出一次）
+            if (!this._bgDebugCounter) this._bgDebugCounter = 0;
+            this._bgDebugCounter++;
+            
+            if (video && video.readyState >= 2 && video.srcObject && this.isRunning) {
                 // 摄像头画面渲染到底层
-                // 注意：ImageBitmap 已包含 CSS scaleX(-1) 变换效果，无需重复镜像
-                ctx.drawImage(currentBitmap, 0, 0, width, height);
+                ctx.save();
                 
-                // 半透明叠加暗色背景（增强特效可见性）
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                // 镜像翻转（左右翻转）
+                ctx.translate(width, 0);
+                ctx.scale(-1, 1);
+                
+                ctx.drawImage(video, 0, 0, width, height);
+                ctx.restore();
+                
+                // 半透明叠加（增强特效可见性）
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
                 ctx.fillRect(0, 0, width, height);
+                
+                if (this._bgDebugCounter % 60 === 0) {
+                    console.log(`[App] 渲染摄像头画面: ${width}x${height}, readyState: ${video.readyState}`);
+                }
             } else {
+                // 调试：显示无法渲染的原因
+                if (this._bgDebugCounter % 60 === 0) {
+                    console.log(`[App] 无法渲染摄像头画面: video=${!!video}, readyState=${video?.readyState}, srcObject=${!!video?.srcObject}, isRunning=${this.isRunning}`);
+                }
                 // 无摄像头时显示渐变背景
                 const gradient = ctx.createLinearGradient(0, 0, width, height);
                 
@@ -7394,6 +7441,13 @@
             this.currentGesture = gesture.type;
             this.currentGestureEl.textContent = this.currentGesture;
             document.getElementById('gestureStatus').className = 'status-dot success';
+            
+            // 调试输出（每30帧输出一次）
+            if (!this._gestureDebugCounter) this._gestureDebugCounter = 0;
+            this._gestureDebugCounter++;
+            if (this._gestureDebugCounter % 30 === 0) {
+                console.log(`[App] 手势识别: ${gesture.type}, 置信度: ${(gesture.confidence || 0).toFixed(2)}, 位置: ${JSON.stringify(gesture.position?.slice(0,2))}`);
+            }
             
             // 处理手势
             this.handleGesture(gesture);
