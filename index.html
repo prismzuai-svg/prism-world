@@ -240,8 +240,8 @@
 const CONFIG = {
     W: 640, H: 480, GRID: 24,
     PINCH: 40, DEBOUNCE: 300,
-    STONE_COUNT: 6, STONE_SIZE: 36,
-    PICKUP_RANGE: 100, ATTRACT_RANGE: 150,
+    STONE_COUNT: 4, STONE_SIZE: 32,
+    PICKUP_RANGE: 120, ATTRACT_RANGE: 180,
     PARTICLE_COUNT: 50,
     NEON_DURATION: 3000
 };
@@ -259,19 +259,20 @@ const TYPES = Object.keys(STYLES);
 class Particle {
     constructor(x,y,color,type='circle') {
         this.x=x; this.y=y; this.color=color; this.type=type;
-        this.vx=(Math.random()-0.5)*4; this.vy=(Math.random()-0.5)*4;
-        this.life=1; this.decay=0.01+Math.random()*0.02;
-        this.size=2+Math.random()*4;
+        this.vx=(Math.random()-0.5)*6; this.vy=(Math.random()-0.5)*6-1;
+        this.life=1; this.decay=0.015+Math.random()*0.015;
+        this.size=3+Math.random()*5;
     }
     update() {
         this.x+=this.vx; this.y+=this.vy;
-        this.vx*=0.98; this.vy*=0.98;
+        this.vx*=0.96; this.vy*=0.96; this.vy+=0.05;
         this.life-=this.decay;
     }
     draw(ctx) {
         if(this.life<=0) return;
         ctx.globalAlpha=this.life;
         ctx.fillStyle=this.color;
+        ctx.shadowColor=this.color; ctx.shadowBlur=8;
         if(this.type==='star') {
             ctx.save(); ctx.translate(this.x,this.y);
             ctx.beginPath();
@@ -290,7 +291,7 @@ class Particle {
         } else {
             ctx.beginPath(); ctx.arc(this.x,this.y,this.size,0,Math.PI*2); ctx.fill();
         }
-        ctx.globalAlpha=1;
+        ctx.globalAlpha=1; ctx.shadowBlur=0;
     }
 }
 
@@ -301,37 +302,49 @@ class PrismStone {
         this.vx=0; this.vy=0; this.rot=0; this.scale=1;
         this.state='idle'; this.holder=null; this.size=CONFIG.STONE_SIZE;
         this.glow=0; this.glowing=false;
+        this.drift=Math.random()*Math.PI*2;
+        this.floatSpeed=0.3+Math.random()*0.3;
     }
     update(dt) {
         const f=dt/16.67;
         if(this.state==='following'&&this.holder) {
             this.tx=this.holder.x; this.ty=this.holder.y;
+            this.floatSpeed=2;
+        } else if(this.state==='idle') {
+            this.floatSpeed=0.3+Math.random()*0.3;
         }
         if(this.state==='attracted') {
             const dx=this.holder.x-this.x, dy=this.holder.y-this.y, d=Math.hypot(dx,dy);
-            if(d<20) this.state='following';
-            else { this.vx+=(dx/d)*0.5*f; this.vy+=(dy/d)*0.5*f; }
+            if(d<25) this.state='following';
+            else { this.vx+=(dx/d)*0.8*f; this.vy+=(dy/d)*0.8*f; }
         }
-        this.x+=(this.tx-this.x)*0.15*f+this.vx;
-        this.y+=(this.ty-this.y)*0.15*f+this.vy;
-        this.vx*=0.9; this.vy*=0.9;
-        this.rot+=0.02*f;
-        if(this.glowing) this.glow=Math.min(1,this.glow+0.05*f);
-        else this.glow=Math.max(0,this.glow-0.03*f);
+        if(this.state==='idle') {
+            this.drift+=0.02*f;
+            this.tx+=Math.sin(this.drift)*0.15;
+            this.ty+=Math.cos(this.drift*0.7)*0.1-0.08;
+            this.tx=Math.max(20,Math.min(CONFIG.W-20,this.tx));
+            this.ty=Math.max(CONFIG.H*0.5,Math.min(CONFIG.H-30,this.ty));
+        }
+        this.x+=(this.tx-this.x)*0.08*f+this.vx;
+        this.y+=(this.ty-this.y)*0.08*f+this.vy;
+        this.vx*=0.88; this.vy*=0.88;
+        this.rot+=0.015*f;
+        if(this.glowing) this.glow=Math.min(1,this.glow+0.08*f);
+        else this.glow=Math.max(0,this.glow-0.04*f);
     }
     draw(ctx) {
         ctx.save(); ctx.globalAlpha=1;
         ctx.translate(this.x,this.y); ctx.rotate(this.rot); ctx.scale(this.scale,this.scale);
-        if(this.glow>0) { ctx.shadowColor=this.style.color; ctx.shadowBlur=20*this.glow; }
-        const s=this.size;
+        if(this.glow>0) { ctx.shadowColor=this.style.color; ctx.shadowBlur=25*this.glow; }
+        const s=this.size*(this.state==='following'?1.15:1);
         ctx.fillStyle=this.style.color;
         ctx.beginPath();
         ctx.moveTo(0,s*0.3);
         ctx.bezierCurveTo(-s*0.5,-s*0.3,-s,s*0.1,0,s*0.8);
         ctx.bezierCurveTo(s,s*0.1,s*0.5,-s*0.3,0,s*0.3);
         ctx.fill();
-        ctx.fillStyle='rgba(255,255,255,0.4)';
-        ctx.beginPath(); ctx.ellipse(-s*0.25,-s*0.1,s*0.15,s*0.1,-0.5,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.5)';
+        ctx.beginPath(); ctx.ellipse(-s*0.2,-s*0.15,s*0.18,s*0.12,-0.5,0,Math.PI*2); ctx.fill();
         ctx.restore();
     }
 }
@@ -340,9 +353,20 @@ class StoneManager {
     constructor() { this.stones=[]; this.held=null; }
     init(n) {
         this.stones=[]; this.held=null;
+        const minDist=120;
         for(let i=0;i<n;i++) {
             const t=TYPES[Math.floor(Math.random()*TYPES.length)];
-            this.stones.push(new PrismStone(t,100+Math.random()*440,100+Math.random()*280));
+            let x,y,attempts=0,valid=false;
+            while(!valid&&attempts<50) {
+                x=30+Math.random()*(CONFIG.W-60);
+                y=CONFIG.H*0.55+Math.random()*(CONFIG.H*0.4-40);
+                valid=true;
+                for(const s of this.stones) {
+                    if(Math.hypot(s.x-x,s.y-y)<minDist) { valid=false; break; }
+                }
+                attempts++;
+            }
+            this.stones.push(new PrismStone(t,x,y));
         }
         this._updateCounts();
     }
@@ -376,8 +400,9 @@ class StoneManager {
 }
 
 class StoneInteraction {
-    constructor(sm) {
+    constructor(sm, app) {
         this.sm=sm;
+        this.app=app;
         this.state={gesture:null,pinch:null,target:null,held:null,handX:0,handY:0,lastPickup:0,lastRelease:0};
         this.debug={gesture:'--',nearest:999,held:'无'};
     }
@@ -432,6 +457,10 @@ class StoneInteraction {
         if(d<CONFIG.PICKUP_RANGE) {
             this.sm.held=s; s.state='following'; s.holder={x,y}; s.glowing=true;
             this.state.lastPickup=now; this.state.held=s;
+            if(this.app) {
+                const ps=this.app.particles;
+                for(let i=0;i<16;i++) ps.push(new Particle(s.x,s.y,s.style.color));
+            }
         }
     }
     _release() {
@@ -440,9 +469,13 @@ class StoneInteraction {
         if(now-this.state.lastRelease<CONFIG.DEBOUNCE) return;
         const s=this.sm.held;
         s.state='idle'; s.holder=null; s.glowing=false;
-        s.vx=(Math.random()-0.5)*10; s.vy=(Math.random()-0.5)*10;
+        s.vx=(Math.random()-0.5)*8; s.vy=(Math.random()-0.5)*8-2;
         this.sm.held=null; this.state.held=null;
         this.state.lastRelease=now;
+        if(this.app) {
+            const ps=this.app.particles;
+            for(let i=0;i<12;i++) ps.push(new Particle(s.x,s.y,s.style.color));
+        }
     }
     _attract(s,x,y) {
         if(!s||s.state==='following') return;
@@ -538,7 +571,7 @@ class App {
             this.ctx[k]=document.getElementById(k+'Canvas').getContext('2d');
         });
         this.sm=new StoneManager();
-        this.si=new StoneInteraction(this.sm);
+        this.si=new StoneInteraction(this.sm, this);
         this.pwt=new PrismWorldTrigger(this);
         this.particles=[];
         this.handsData=[];
