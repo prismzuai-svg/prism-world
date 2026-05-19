@@ -403,26 +403,24 @@ class StoneInteraction {
         }
         this._updateDebugUI();
     }
+    _getFingers(lm) {
+        const f={};
+        f.thumb=Math.hypot(lm[4].x-lm[2].x,lm[4].y-lm[2].y)>0.05;
+        ['index','middle','ring','pinky'].forEach((n,i)=>{f[n]=lm[8+i*4].y<lm[6+i*4].y;});
+        return f;
+    }
     _pinch(lm) {
-        const d=Math.hypot(lm[4].x-lm[8].x,lm[4].y-lm[8].y)*640;
+        const d=Math.hypot(lm[4].x-lm[8].x,lm[4].y-lm[8].y)*CONFIG.W;
         const p=d<CONFIG.PINCH;
         return {isPinch:p,strength:p?1-(d/CONFIG.PINCH):0,dist:d};
     }
     _gesture(lm,pinch) {
-        const f=this._fingers(lm);
+        const f=this._getFingers(lm);
         const open=Object.values(f).filter(Boolean).length;
         if(pinch.isPinch) return 'G03_PINCH';
         if(open>=4) return 'G01_OPEN';
         if(open<=1) return 'G02_FIST';
         return 'G04_OTHER';
-    }
-    _fingers(lm) {
-        const f={};
-        f.thumb=Math.hypot(lm[4].x-lm[2].x,lm[4].y-lm[2].y)>0.08;
-        ['index','middle','ring','pinky'].forEach((n,i)=>{
-            f[n]=lm[8+i*4].y<lm[6+i*4].y;
-        });
-        return f;
     }
     _pickup(s,x,y) {
         if(!s) return;
@@ -508,7 +506,7 @@ class PrismWorldTrigger {
     }
     _palm(lm) { return {x:(lm[0].x+lm[5].x+lm[17].x)/3,y:(lm[0].y+lm[5].y+lm[17].y)/3}; }
     _fingers(lm) {
-        const f={thumb:Math.hypot(lm[4].x-lm[2].x,lm[4].y-lm[2].y)>0.08};
+        const f={thumb:Math.hypot(lm[4].x-lm[2].x,lm[4].y-lm[2].y)>0.05};
         ['index','middle','ring','pinky'].forEach((n,i)=>{f[n]=lm[8+i*4].y<lm[6+i*4].y;});
         return f;
     }
@@ -636,66 +634,73 @@ class App {
         if(typeof Hands==='undefined') throw new Error('MediaPipe未加载');
         document.getElementById('handsLoadingProgress').style.display='block';
         this.hands=new Hands({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/hands/'+f});
-        this.hands.setOptions({maxNumHands:2,modelComplexity:0,minDetectionConfidence:0.5,minTrackingConfidence:0.5,selfieMode:true});
-        this.hands.onResults(r=>this.onHandsResults(r));
+        this.hands.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:0.7,minTrackingConfidence:0.5,selfieMode:true});
+        this.hands.onResults(results=>this._handleHandsResults(results));
+        // 等待模型加载
+        await new Promise(resolve=>{
+            if(this.hands.initialize) {
+                this.hands.initialize().then(resolve).catch(()=>setTimeout(resolve,2000));
+            } else {
+                setTimeout(resolve,1000);
+            }
+        });
         document.getElementById('handsLoadingProgress').style.display='none';
         document.getElementById('gestureStatus').className='status-dot success';
     }
-    onHandsResults(results) {
+    _handleHandsResults(results) {
+        if(!results) return;
+        try {
+            this._processHandsData(results);
+        } catch(e) { console.error('手势处理错误:',e); }
+    }
+    _processHandsData(results) {
         if(!results.multiHandLandmarks||!results.multiHandLandmarks.length) {
             this.handsData=[]; this.gesture='NONE';
             document.getElementById('currentGesture').textContent='未检测到手';
+            this._clearGestureUI();
             return;
         }
         this.handsData=[];
         results.multiHandLandmarks.forEach((lm,i)=>{
-            const h=results.multiHandedness?results.multiHandedness[i]:null;
-            this.handsData.push({
-                landmarks:lm,
-                handedness:h?h.label:(i===0?'Right':'Left'),
-                confidence:h?h.score:1
-            });
+            const h=results.multiHandedness&&results.multiHandedness[i];
+            this.handsData.push({landmarks:lm,handedness:h?h.label:(i===0?'Right':'Left'),confidence:h?h.score:1});
         });
-        this._classifyGesture(this.handsData[0].landmarks);
+        const lm=this.handsData[0].landmarks;
+        // 实时分类手势
+        this.gesture=this._detectGesture(lm);
+        document.getElementById('currentGesture').textContent=this._getGestureName(this.gesture);
+        // 处理棱石交互
         this.si.process(this.handsData);
+        // 处理Prism世界
         this.pwt.process(this.handsData);
         this._updateGestureDebug();
     }
-    _classifyGesture(lm) {
-        const f=this._analyzeFingers(lm);
-        const open=Object.values(f).filter(Boolean).length;
-        const d=Math.hypot(lm[4].x-lm[8].x,lm[4].y-lm[8].y)*640;
-        let g='NONE';
-        if(d<CONFIG.PINCH) g='G03_PINCH';
-        else if(open>=4) g='G01_OPEN';
-        else if(open<=1) g='G02_FIST';
-        else if(f.index&&f.middle&&!f.ring&&!f.pinky) g='G04_V_SIGN';
-        else if(f.thumb&&!f.index&&f.middle&&f.ring&&f.pinky) g='G05_THUMBS_UP';
-        else if(f.index&&!f.middle&&!f.ring&&!f.pinky) g='G06_POINTING';
-        else if(f.thumb&&f.index&&Math.hypot(lm[4].x-lm[8].x,lm[4].y-lm[8].y)*640<80) g='G07_OK';
-        else if(f.index&&!f.middle&&!f.ring&&f.pinky) g='G08_ROCK';
-        else if(f.thumb&&f.pinky&&!f.index&&!f.middle&&!f.ring) g='G09_CALL';
-        else if(open===2&&f.thumb&&f.index) g='G10_HEART';
-        else g='G04_OTHER';
-        this.gesture=g;
-        const names={'G01_OPEN':'五指张开','G02_FIST':'握拳','G03_PINCH':'捏合','G04_V_SIGN':'剪刀手','G05_THUMBS_UP':'点赞','G06_POINTING':'指向','G07_OK':'OK','G08_ROCK':'摇滚','G09_CALL':'电话','G10_HEART':'比心','G04_OTHER':'其他','NONE':'等待识别...'};
-        document.getElementById('currentGesture').textContent=names[g]||g;
-    }
-    _analyzeFingers(lm) {
-        const f={thumb:Math.hypot(lm[4].x-lm[2].x,lm[4].y-lm[2].y)>0.08};
+    _detectGesture(lm) {
+        const d=Math.hypot(lm[4].x-lm[8].x,lm[4].y-lm[8].y)*CONFIG.W;
+        if(d<CONFIG.PINCH) return 'G03_PINCH';
+        const f={};
+        f.thumb=Math.hypot(lm[4].x-lm[2].x,lm[4].y-lm[2].y)>0.05;
         ['index','middle','ring','pinky'].forEach((n,i)=>{f[n]=lm[8+i*4].y<lm[6+i*4].y;});
-        return f;
+        const open=Object.values(f).filter(Boolean).length;
+        if(open>=4) return 'G01_OPEN';
+        if(open<=1) return 'G02_FIST';
+        if(f.index&&f.middle&&!f.ring&&!f.pinky) return 'G04_V';
+        if(f.thumb&&!f.index&&f.middle&&f.ring&&f.pinky) return 'G05_THUMBUP';
+        if(f.index&&!f.middle&&!f.ring&&!f.pinky) return 'G06_POINT';
+        if(open===2&&f.thumb&&f.index) return 'G10_HEART';
+        return 'G04_OTHER';
+    }
+    _getGestureName(g) {
+        const names={'G01_OPEN':'五指张开','G02_FIST':'握拳','G03_PINCH':'捏合','G04_V':'剪刀手','G05_THUMBUP':'点赞','G06_POINT':'指向','G07_OK':'OK','G08_ROCK':'摇滚','G09_CALL':'打电话','G10_HEART':'比心','G04_OTHER':'其他','NONE':'等待识别...'};
+        return names[g]||g;
+    }
+    _clearGestureUI() {
+        document.getElementById('currentGestureName').textContent='--';
+        document.getElementById('gestureCodeDisplay').textContent='--';
+        document.getElementById('stoneGestureType').textContent='--';
     }
     _updateGestureDebug() {
-        if(!this.showGesture||!this.handsData.length) return;
-        const lm=this.handsData[0].landmarks;
-        const f=this._analyzeFingers(lm);
-        const map={thumb:'fingerThumb',index:'fingerIndex',middle:'fingerMiddle',ring:'fingerRing',pinky:'fingerPinky'};
-        Object.entries(map).forEach(([k,id])=>{
-            const el=document.getElementById(id);
-            if(el) el.querySelector('.finger-status').textContent=f[k]?'ON':'OFF';
-            if(el) el.querySelector('.finger-status').className='finger-status '+(f[k]?'on':'off');
-        });
+        if(!this.showGesture) return;
         document.getElementById('currentGestureName').textContent=this.gesture;
         document.getElementById('gestureCodeDisplay').textContent=this.gesture;
     }
