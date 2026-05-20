@@ -177,12 +177,9 @@
             <button class="btn btn-secondary" id="stopBtn" disabled>⏹ 停止</button>
             <button class="btn btn-secondary" id="toggleAudioBtn">🔊 音乐</button>
             <button class="btn btn-secondary" id="performanceBtn">⚙ 性能</button>
-            <button class="btn btn-charart" id="charArtModeBtn">🎨 纯字符</button>
-            <button class="btn btn-charart" id="charArtOpacityBtn">💫 叠加</button>
             <button class="btn btn-secondary" id="landmarkDebugBtn">🔍 21点检测</button>
             <button class="btn btn-secondary" id="gestureDebugBtn">✋ 手势分类</button>
             <button class="btn btn-secondary" id="stoneDebugBtn">💎 棱石交互</button>
-            <button class="btn btn-prism" id="prismTriggerBtn">✨ Prism世界</button>
         </div>
         <div class="gesture-debug-panel" id="gestureDebugPanel" style="display: none;">
             <div class="debug-title">✋ G01-G10 手势分类器</div>
@@ -214,20 +211,10 @@
             <div class="prism-trigger-info"><div class="prism-trigger-title">🎯 触发方式</div><div class="prism-trigger-gesture"><span>🤚</span><span>⟷</span><span>🤚</span><span style="color:#aaa;margin-left:10px;">双手拉开</span></div></div>
         </div>
         <div class="prism-world-flash" id="prismFlash"></div>
-        <div class="neon-transition-indicator" id="neonTransitionIndicator">✨ PRISM WORLD ✨</div>
+        <div class="neon-transition-indicator" id="neonTransitionIndicator">✨</div>
         <div class="loading-progress" id="handsLoadingProgress" style="display: none;">
             <div class="loading-bar"><div class="loading-fill" id="handsLoadingFill"></div></div>
             <div class="loading-text" id="handsLoadingText">正在初始化Hands模型...</div>
-        </div>
-        <div class="charart-mode-panel" id="charArtModePanel">
-            <div class="charart-mode-title">字符画渲染模式</div>
-            <div class="charart-mode-buttons">
-                <button class="charart-mode-btn active" data-mode="PRISM">💎 Prism霓虹</button>
-                <button class="charart-mode-btn" data-mode="RAINBOW">🌈 彩虹</button>
-                <button class="charart-mode-btn" data-mode="GLOW">✨ 发光</button>
-                <button class="charart-mode-btn" data-mode="STANDARD">⬜ 标准</button>
-            </div>
-            <div class="charart-opacity-slider"><label>透明度</label><input type="range" id="charArtOpacitySlider" min="0" max="100" value="60"><span id="charArtOpacityValue">60%</span></div>
         </div>
         <div class="status-bar">
             <div class="status-item"><span class="status-dot" id="cameraStatus"></span><span>摄像头</span></div>
@@ -240,8 +227,8 @@
 const CONFIG = {
     W: 640, H: 480, GRID: 24,
     PINCH: 40, DEBOUNCE: 300,
-    STONE_COUNT: 4, STONE_SIZE: 32,
-    PICKUP_RANGE: 120, ATTRACT_RANGE: 180,
+    STONE_COUNT: 12, STONE_SIZE: 32,
+    PICKUP_RANGE: 120, ATTRACT_RANGE: 220,
     PARTICLE_COUNT: 50,
     NEON_DURATION: 3000
 };
@@ -315,8 +302,8 @@ class PrismStone {
         }
         if(this.state==='attracted') {
             const dx=this.holder.x-this.x, dy=this.holder.y-this.y, d=Math.hypot(dx,dy);
-            if(d<25) this.state='following';
-            else { this.vx+=(dx/d)*0.8*f; this.vy+=(dy/d)*0.8*f; }
+            if(d<30) this.state='following';
+            else { this.vx+=(dx/d)*1.5*f; this.vy+=(dy/d)*1.5*f; }
         }
         if(this.state==='idle') {
             this.drift+=0.02*f;
@@ -512,6 +499,9 @@ class PrismWorldTrigger {
         this.lastTrigger=0;
         this.left=null; this.right=null;
         this.dist=0;
+        this.bounds={x:0,y:0,w:0,h:0};
+        this.emojis=[];
+        this.emojiChars=['💗','💙','💜','💚','💛','⭐','✨','🌟','💫','🔮'];
     }
     process(handsData) {
         if(!handsData||handsData.length<2) {
@@ -525,6 +515,12 @@ class PrismWorldTrigger {
         this.left={x:lp.x*CONFIG.W,y:lp.y*CONFIG.H};
         this.right={x:rp.x*CONFIG.W,y:rp.y*CONFIG.H};
         this.dist=Math.hypot(this.right.x-this.left.x,this.right.y-this.left.y);
+        // 计算双手包围框
+        const minX=Math.min(this.left.x,this.right.x)-40;
+        const maxX=Math.max(this.left.x,this.right.x)+40;
+        const minY=Math.min(this.left.y,this.right.y)-60;
+        const maxY=Math.max(this.left.y,this.right.y)+60;
+        this.bounds={x:minX,y:minY,w:maxX-minX,h:maxY-minY};
         const lf=this._fingers(l.landmarks), rf=this._fingers(r.landmarks);
         const loc=Object.values(lf).filter(Boolean).length;
         const roc=Object.values(rf).filter(Boolean).length;
@@ -536,12 +532,33 @@ class PrismWorldTrigger {
             this._exit();
         }
         this._updateUI();
+        if(this.active) this._updateEmojis();
     }
     _palm(lm) { return {x:(lm[0].x+lm[5].x+lm[17].x)/3,y:(lm[0].y+lm[5].y+lm[17].y)/3}; }
     _fingers(lm) {
         const f={thumb:Math.hypot(lm[4].x-lm[2].x,lm[4].y-lm[2].y)>0.05};
         ['index','middle','ring','pinky'].forEach((n,i)=>{f[n]=lm[8+i*4].y<lm[6+i*4].y;});
         return f;
+    }
+    _updateEmojis() {
+        // 保持5-8个emoji
+        while(this.emojis.length<6) {
+            this.emojis.push({
+                x:this.bounds.x+Math.random()*this.bounds.w,
+                y:this.bounds.y+Math.random()*this.bounds.h,
+                char:this.emojiChars[Math.floor(Math.random()*this.emojiChars.length)],
+                vx:(Math.random()-0.5)*0.5,
+                vy:(Math.random()-0.5)*0.5-0.2,
+                life:1,
+                size:12+Math.random()*8
+            });
+        }
+        this.emojis.forEach(e=>{
+            e.x+=e.vx; e.y+=e.vy;
+            e.life-=0.005;
+            if(e.life<0.3) e.life=0;
+        });
+        this.emojis=this.emojis.filter(e=>e.life>0);
     }
     _enter() {
         this.active=true; this.app.isPrismWorld=true;
@@ -551,10 +568,10 @@ class PrismWorldTrigger {
         setTimeout(()=>{document.getElementById('prismFlash').classList.remove('active');},800);
         setTimeout(()=>{document.getElementById('neonTransitionIndicator').classList.remove('show');},1500);
     }
-    _exit() { this.active=false; this.app.isPrismWorld=false; document.getElementById('prismStatus').className='status-dot warning'; }
+    _exit() { this.active=false; this.app.isPrismWorld=false; this.emojis=[]; document.getElementById('prismStatus').className='status-dot warning'; }
     _updateUI() {
         const ps=document.getElementById('prismWorldStatus');
-        if(ps) { ps.textContent=this.active?'PRISM WORLD':'普通模式'; ps.className='prism-status-value'+(this.active?' active':''); }
+        if(ps) { ps.textContent=this.active?'触发中':'普通模式'; ps.className='prism-status-value'+(this.active?' active':''); }
         const hd=document.getElementById('handDistance');
         if(hd) hd.textContent=Math.round(this.dist)+'px';
         const ni=document.getElementById('neonIntensity');
@@ -577,7 +594,7 @@ class App {
         this.handsData=[];
         this.gesture='NONE';
         this.isPrismWorld=false;
-        this.charArt={mode:'PRISM',opacity:0.6,enabled:false};
+        this.charArt={mode:'PRISM',opacity:0.5,enabled:true};
         this.showLandmark=false;
         this.showGesture=false;
         this.showStone=false;
@@ -597,8 +614,6 @@ class App {
         document.getElementById('stopBtn').onclick=()=>this.stop();
         document.getElementById('toggleAudioBtn').onclick=()=>this.toggleAudio();
         document.getElementById('performanceBtn').onclick=()=>this.togglePerf();
-        document.getElementById('charArtModeBtn').onclick=()=>this.toggleCharArtMode();
-        document.getElementById('charArtOpacityBtn').onclick=()=>this.toggleCharArtOpacity();
         document.getElementById('landmarkDebugBtn').onclick=()=>{this.showLandmark=!this.showLandmark;};
         document.getElementById('gestureDebugBtn').onclick=()=>{
             this.showGesture=!this.showGesture;
@@ -608,26 +623,8 @@ class App {
             this.showStone=!this.showStone;
             document.getElementById('stoneDebugPanel').style.display=this.showStone?'block':'none';
         };
-        document.getElementById('prismTriggerBtn').onclick=()=>{
-            const p=document.getElementById('prismWorldPanel');
-            p.classList.toggle('active');
-        };
-        document.getElementById('prismPanelCloseBtn').onclick=()=>{
-            document.getElementById('prismWorldPanel').classList.remove('active');
-        };
         document.getElementById('perfIndicator').onclick=()=>{
             document.getElementById('perfIndicator').classList.toggle('expanded');
-        };
-        document.querySelectorAll('.charart-mode-btn').forEach(b=>{
-            b.onclick=()=>{
-                document.querySelectorAll('.charart-mode-btn').forEach(x=>x.classList.remove('active'));
-                b.classList.add('active');
-                this.charArt.mode=b.dataset.mode;
-            };
-        });
-        document.getElementById('charArtOpacitySlider').oninput=(e)=>{
-            this.charArt.opacity=e.target.value/100;
-            document.getElementById('charArtOpacityValue').textContent=e.target.value+'%';
         };
     }
     async start() {
@@ -739,15 +736,6 @@ class App {
     }
     toggleAudio() { alert('音乐功能待实现'); }
     togglePerf() { document.getElementById('perfIndicator').classList.toggle('expanded'); }
-    toggleCharArtMode() {
-        const p=document.getElementById('charArtModePanel');
-        p.classList.toggle('visible');
-        this.charArt.enabled=!this.charArt.enabled;
-    }
-    toggleCharArtOpacity() {
-        this.charArt.enabled=!this.charArt.enabled;
-        document.getElementById('charArtOpacityBtn').classList.toggle('active',this.charArt.enabled);
-    }
     async loop() {
         if(!this.isRunning) return;
         const now=performance.now();
@@ -765,7 +753,7 @@ class App {
         this.sm.update(dt);
         this.particles.forEach(p=>p.update());
         this.particles=this.particles.filter(p=>p.life>0);
-        if(this.charArt.enabled&&this.video.readyState>=2&&this._frameCount%3===0) {
+        if(this.video.readyState>=2&&this._frameCount%3===0) {
             this._updateCharArt();
         }
         if(this.hands&&this.video.readyState>=2) {
@@ -808,10 +796,11 @@ class App {
         gestureTrail.clearRect(0,0,CONFIG.W,CONFIG.H);
         ui.clearRect(0,0,CONFIG.W,CONFIG.H);
         this._renderBG(bg);
-        if(this.charArt.enabled) this._renderCharArt(charArt);
+        this._renderCharArt(charArt);
         this.sm.draw(prismStone);
         this.particles.forEach(p=>p.draw(particle));
         this._renderHands(ui);
+        if(this.pwt.active) this._renderPrismWorld(ui);
     }
     _renderBG(ctx) {
         ctx.clearRect(0,0,CONFIG.W,CONFIG.H);
@@ -850,6 +839,19 @@ class App {
             });
         });
         ctx.globalAlpha=1;
+    }
+    _renderPrismWorld(ctx) {
+        const {bounds,emojis}=this.pwt;
+        if(!bounds||!emojis.length) return;
+        ctx.save();
+        emojis.forEach(e=>{
+            ctx.globalAlpha=e.life*0.7;
+            ctx.font=`${e.size}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
+            ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.fillText(e.char,e.x,e.y);
+        });
+        ctx.globalAlpha=1;
+        ctx.restore();
     }
     _renderHands(ctx) {
         if(!this.showLandmark||!this.handsData.length) return;
