@@ -100,24 +100,6 @@
         .gesture-code-display { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(147,112,219,0.3); text-align: center; }
         .gesture-code-title { color: #aaa; font-size: 0.8rem; margin-bottom: 5px; }
         .gesture-code { font-size: 2rem; font-weight: bold; color: #ff69b4; text-shadow: 0 0 20px rgba(255,105,180,0.7); }
-        .prism-world-panel { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(10,10,30,0.95); border: 2px solid rgba(255,215,0,0.5); border-radius: 15px; padding: 15px 20px; min-width: 280px; z-index: 100; box-shadow: 0 0 30px rgba(255,215,0,0.3); backdrop-filter: blur(10px); transition: all 0.5s ease; display: none; }
-        .prism-world-panel.active { display: block; border-color: rgba(255,215,0,0.8); box-shadow: 0 0 50px rgba(255,215,0,0.5), 0 0 100px rgba(255,105,180,0.3); }
-        .prism-world-panel .debug-title { font-size: 1.1rem; font-weight: bold; color: #FFD700; margin-bottom: 12px; text-align: center; text-shadow: 0 0 10px rgba(255,215,0,0.5); display: flex; justify-content: space-between; align-items: center; }
-        .prism-world-panel .close-btn { background: rgba(255,100,100,0.8); border: none; color: white; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 14px; line-height: 24px; text-align: center; }
-        .prism-world-status { display: flex; justify-content: space-around; align-items: center; gap: 15px; margin-bottom: 12px; }
-        .prism-status-item { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-        .prism-status-label { font-size: 0.75rem; color: #aaa; }
-        .prism-status-value { font-size: 1rem; font-weight: bold; color: #fff; }
-        .prism-status-value.active { color: #FFD700; }
-        .prism-trigger-info { padding: 10px; background: rgba(255,255,255,0.05); border-radius: 10px; margin-top: 10px; }
-        .prism-trigger-title { font-size: 0.8rem; color: #FFD700; margin-bottom: 8px; text-align: center; }
-        .prism-trigger-gesture { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 0.85rem; color: #fff; }
-        .prism-world-flash { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: radial-gradient(circle, rgba(255,215,0,0.3) 0%, rgba(255,105,180,0.2) 50%, transparent 100%); pointer-events: none; opacity: 0; z-index: 9999; }
-        .prism-world-flash.active { animation: prismFlash 0.8s ease-out forwards; }
-        @keyframes prismFlash { 0% { opacity: 1; transform: scale(0.5); } 50% { opacity: 0.8; transform: scale(1); } 100% { opacity: 0; transform: scale(1.5); } }
-        .neon-transition-indicator { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 2rem; font-weight: bold; color: #FFD700; text-shadow: 0 0 20px rgba(255,215,0,0.8), 0 0 40px rgba(255,105,180,0.5); opacity: 0; pointer-events: none; z-index: 200; }
-        .neon-transition-indicator.show { animation: neonTransition 1.5s ease-out forwards; }
-        @keyframes neonTransition { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); } 80% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); } }
         .btn-secondary.active { background: linear-gradient(135deg, #00bfff, #9370db); box-shadow: 0 0 15px rgba(0,191,255,0.5); }
         .stone-debug-panel { position: absolute; top: 20px; left: 200px; background: rgba(10,10,30,0.95); border: 2px solid rgba(255,105,180,0.5); border-radius: 15px; padding: 15px; min-width: 220px; z-index: 100; box-shadow: 0 0 30px rgba(255,105,180,0.3); backdrop-filter: blur(10px); }
         .stone-debug-panel .debug-title { font-size: 1rem; font-weight: bold; color: #ff69b4; margin-bottom: 12px; text-align: center; text-shadow: 0 0 10px rgba(255,105,180,0.5); }
@@ -201,17 +183,6 @@
             <div class="stone-distance-bar"><div class="stone-distance-fill" id="stoneDistanceFill" style="width: 0%"></div></div>
             <div class="stone-info"><div class="stone-type-indicator" id="heldStoneInfo"><span class="stone-type-emoji">💎</span><span class="stone-type-name">无拾取</span></div></div>
         </div>
-        <div class="prism-world-panel" id="prismWorldPanel">
-            <div class="debug-title"><span>✨ Prism世界触发系统 ✨</span><button class="close-btn" id="prismPanelCloseBtn">✕</button></div>
-            <div class="prism-world-status">
-                <div class="prism-status-item"><span class="prism-status-label">世界状态</span><span class="prism-status-value" id="prismWorldStatus">普通模式</span></div>
-                <div class="prism-status-item"><span class="prism-status-label">霓虹强度</span><span class="prism-status-value" id="neonIntensity">0%</span></div>
-                <div class="prism-status-item"><span class="prism-status-label">双手距离</span><span class="prism-status-value" id="handDistance">--</span></div>
-            </div>
-            <div class="prism-trigger-info"><div class="prism-trigger-title">🎯 触发方式</div><div class="prism-trigger-gesture"><span>🤚</span><span>⟷</span><span>🤚</span><span style="color:#aaa;margin-left:10px;">双手拉开</span></div></div>
-        </div>
-        <div class="prism-world-flash" id="prismFlash"></div>
-        <div class="neon-transition-indicator" id="neonTransitionIndicator">✨</div>
         <div class="loading-progress" id="handsLoadingProgress" style="display: none;">
             <div class="loading-bar"><div class="loading-fill" id="handsLoadingFill"></div></div>
             <div class="loading-text" id="handsLoadingText">正在初始化Hands模型...</div>
@@ -226,10 +197,10 @@
 <script>
 const CONFIG = {
     W: 640, H: 480, GRID: 24,
-    PINCH: 40, DEBOUNCE: 300,
-    STONE_COUNT: 12, STONE_SIZE: 32,
-    PICKUP_RANGE: 120, ATTRACT_RANGE: 220,
-    PARTICLE_COUNT: 50,
+    PINCH: 50, DEBOUNCE: 300,
+    STONE_COUNT: 26, STONE_SIZE: 32,
+    PICKUP_RANGE: 120, ATTRACT_RANGE: 280,
+    PARTICLE_COUNT: 80,
     NEON_DURATION: 3000
 };
 const STYLES = {
@@ -302,8 +273,8 @@ class PrismStone {
         }
         if(this.state==='attracted') {
             const dx=this.holder.x-this.x, dy=this.holder.y-this.y, d=Math.hypot(dx,dy);
-            if(d<30) this.state='following';
-            else { this.vx+=(dx/d)*1.5*f; this.vy+=(dy/d)*1.5*f; }
+            if(d<50) this.state='following';
+            else { this.vx+=(dx/d)*3.5*f; this.vy+=(dy/d)*3.5*f; }
         }
         if(this.state==='idle') {
             this.drift+=0.02*f;
@@ -446,7 +417,9 @@ class StoneInteraction {
             this.state.lastPickup=now; this.state.held=s;
             if(this.app) {
                 const ps=this.app.particles;
-                for(let i=0;i<16;i++) ps.push(new Particle(s.x,s.y,s.style.color));
+                for(let i=0;i<28;i++) ps.push(new Particle(s.x,s.y,s.style.color));
+                for(let i=0;i<10;i++) ps.push(new Particle(s.x,s.y,s.style.color,'heart'));
+                for(let i=0;i<10;i++) ps.push(new Particle(s.x,s.y,'#FFD700','star'));
             }
         }
     }
@@ -461,7 +434,8 @@ class StoneInteraction {
         this.state.lastRelease=now;
         if(this.app) {
             const ps=this.app.particles;
-            for(let i=0;i<12;i++) ps.push(new Particle(s.x,s.y,s.style.color));
+            for(let i=0;i<22;i++) ps.push(new Particle(s.x,s.y,s.style.color));
+            for(let i=0;i<8;i++) ps.push(new Particle(s.x,s.y,s.style.color,'heart'));
         }
     }
     _attract(s,x,y) {
@@ -541,41 +515,31 @@ class PrismWorldTrigger {
         return f;
     }
     _updateEmojis() {
-        // 保持5-8个emoji
-        while(this.emojis.length<6) {
+        while(this.emojis.length<16) {
             this.emojis.push({
                 x:this.bounds.x+Math.random()*this.bounds.w,
                 y:this.bounds.y+Math.random()*this.bounds.h,
                 char:this.emojiChars[Math.floor(Math.random()*this.emojiChars.length)],
-                vx:(Math.random()-0.5)*0.5,
-                vy:(Math.random()-0.5)*0.5-0.2,
+                vx:(Math.random()-0.5)*1.2,
+                vy:(Math.random()-0.5)*1.0-0.4,
                 life:1,
-                size:12+Math.random()*8
+                size:16+Math.random()*14
             });
         }
         this.emojis.forEach(e=>{
             e.x+=e.vx; e.y+=e.vy;
-            e.life-=0.005;
-            if(e.life<0.3) e.life=0;
+            e.life-=0.003;
+            if(e.life<0.2) e.life=0;
         });
         this.emojis=this.emojis.filter(e=>e.life>0);
     }
     _enter() {
         this.active=true; this.app.isPrismWorld=true;
         document.getElementById('prismStatus').className='status-dot success';
-        document.getElementById('prismFlash').classList.add('active');
-        document.getElementById('neonTransitionIndicator').classList.add('show');
-        setTimeout(()=>{document.getElementById('prismFlash').classList.remove('active');},800);
-        setTimeout(()=>{document.getElementById('neonTransitionIndicator').classList.remove('show');},1500);
     }
     _exit() { this.active=false; this.app.isPrismWorld=false; this.emojis=[]; document.getElementById('prismStatus').className='status-dot warning'; }
     _updateUI() {
-        const ps=document.getElementById('prismWorldStatus');
-        if(ps) { ps.textContent=this.active?'触发中':'普通模式'; ps.className='prism-status-value'+(this.active?' active':''); }
-        const hd=document.getElementById('handDistance');
-        if(hd) hd.textContent=Math.round(this.dist)+'px';
-        const ni=document.getElementById('neonIntensity');
-        if(ni) ni.textContent=(this.active?'100':'0')+'%';
+        // UI面板已移除，状态由状态点指示
     }
 }
 
@@ -810,8 +774,6 @@ class App {
             ctx.translate(CONFIG.W,0); ctx.scale(-1,1);
             ctx.drawImage(v,0,0,CONFIG.W,CONFIG.H);
             ctx.restore();
-            ctx.fillStyle='rgba(0,0,0,0.25)';
-            ctx.fillRect(0,0,CONFIG.W,CONFIG.H);
         } else {
             const grd=ctx.createLinearGradient(0,0,CONFIG.W,CONFIG.H);
             grd.addColorStop(0,this.isPrismWorld?'#1a0a2e':'#0a0a1a');
@@ -827,29 +789,43 @@ class App {
         }
     }
     _renderCharArt(ctx) {
-        if(!this.grid.length) return;
-        ctx.globalAlpha=this.charArt.opacity;
+        if(!this.pwt.active || !this.grid.length) return;
+        const b=this.pwt.bounds;
+        if(!b||b.w<=0||b.h<=0) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(b.x,b.y,b.w,b.h);
+        ctx.clip();
+        ctx.globalAlpha=0.38;
         const fs=Math.floor(CONFIG.GRID*0.85);
         ctx.font=`${fs}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
         ctx.textAlign='center'; ctx.textBaseline='middle';
         this.grid.forEach(row=>{
             row.forEach(c=>{
-                ctx.fillStyle=c.color;
-                ctx.fillText(c.char,c.x,c.y);
+                if(c.x>=b.x-CONFIG.GRID&&c.x<=b.x+b.w+CONFIG.GRID&&
+                   c.y>=b.y-CONFIG.GRID&&c.y<=b.y+b.h+CONFIG.GRID){
+                    ctx.fillStyle=c.color;
+                    ctx.fillText(c.char,c.x,c.y);
+                }
             });
         });
-        ctx.globalAlpha=1;
+        ctx.restore();
     }
     _renderPrismWorld(ctx) {
         const {bounds,emojis}=this.pwt;
         if(!bounds||!emojis.length) return;
         ctx.save();
+        ctx.fillStyle='rgba(0,0,0,0.12)';
+        ctx.fillRect(bounds.x,bounds.y,bounds.w,bounds.h);
         emojis.forEach(e=>{
-            ctx.globalAlpha=e.life*0.7;
+            ctx.globalAlpha=e.life*0.55;
             ctx.font=`${e.size}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
             ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.shadowColor='rgba(255,255,255,0.4)';
+            ctx.shadowBlur=6;
             ctx.fillText(e.char,e.x,e.y);
         });
+        ctx.shadowBlur=0;
         ctx.globalAlpha=1;
         ctx.restore();
     }
